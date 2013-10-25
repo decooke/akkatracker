@@ -2,17 +2,6 @@
  * D.Cooke  9/13/13 5:02 PM
  */
 
-// Akka project creation notes
-
-// go to File | Project Structure | Libraries
-// add following jars to scala-library classes section:
-// add akka-actor jar via hidden .ivy directory
-// add akka config jar via .ivy but from higher directory (not actor)
-
-// then edit run configuration
-// make Main class akka.Main
-// make program Argument the top class / entry point of this file
-// working directory should be full path to this project
 
 import akka.actor.{Actor, Props}
 import collection.mutable.ArrayBuffer
@@ -68,12 +57,6 @@ class CommandReader extends Actor {
           self ! CommandReader.Start
         }
 
-        case "t" | "tweak" => {
-          val wavFileWriter = context.actorOf(Props[WavFileWriter])
-          wavFileWriter ! WavFileWriter.Tweak
-          self ! CommandReader.Start
-        }
-
         case "s" | "sine" => {
           val wavFileWriter = context.actorOf(Props[WavFileWriter])
           wavFileWriter ! WavFileWriter.SineTone
@@ -86,7 +69,7 @@ class CommandReader extends Actor {
           self ! CommandReader.Start
         }
 
-        case "q" | "quit" | "exit" => {;
+        case "q" | "quit" | "exit" => {
           context.stop(audioFilePlayer)
           context.parent ! Starter.Done
         }
@@ -117,10 +100,6 @@ class AudioFilePlayer extends Actor {
       catch {
         case e: Exception => e.printStackTrace()
       }
-    case AudioFilePlayer.Done =>
-
-
-
   }
 }
 
@@ -177,27 +156,6 @@ object WavFileWriter {
 class WavFileWriter extends Actor {
 
   def receive = {
-    case WavFileWriter.Tweak =>
-//      val chooser: JFileChooser = new JFileChooser()
-//      chooser.showOpenDialog(null)
-//      val soundFile = chooser.getSelectedFile
-//
-//      val in = new FileInputStream(soundFile)
-//      val out = new FileOutputStream("tweaked.wav")
-//      var header = new Array[Byte](WavFileWriter.wavHeaderLength)
-//      val samples = new Array[Byte](soundFile.length.toInt - WavFileWriter.wavHeaderLength)
-//
-//      in.read(header)
-//      in.read(samples)
-//      in.close()
-//
-//      var newSamples = tweakSamples(samples)
-//      newSamples = loopSamples(newSamples, 2)
-//
-//      header = updateHeader(header, newSamples.length)
-//      out.write(header)
-//      out.write(newSamples)
-//      out.close()
 
     case WavFileWriter.SineTone =>
       val out = new FileOutputStream("mysine.wav")
@@ -240,20 +198,6 @@ class WavFileWriter extends Actor {
       out.write(finalSamples)
       out.close()
   }
-
-//   def tweakSamples(samples: Array[Byte]): Array[Byte] = {
-//
-//     var sampleValues = ArrayBuffer[Int]()
-//
-//      for (enum <- samples.grouped(2))
-//       sampleValues += ((enum(0) & 0xff) | (enum(1) << 8))
-//
-//     // tweak the samples
-//     val tweakedSamples = sampleValues.map(_ * 0.5)
-//
-//     val newSamples = convertSamples(tweakedSamples)
-//     newSamples
-//   }
 
   def makeSineTone(frequency: Double, amplitude: Double, duration: Double): ArrayBuffer[Int] = {
 
