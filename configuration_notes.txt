@@ -1,4 +1,4 @@
-// Akka project creation notes (specific to IntelliJ IDEA 12.0.4)
+// Akka project creation notes  (specific to IntelliJ IDEA 12.0.4)
 
 // go to File | Project Structure | Libraries
 // add following jars to scala-library classes section:
