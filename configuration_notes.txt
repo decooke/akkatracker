@@ -1,0 +1,11 @@
+// Akka project creation notes (specific to IntelliJ IDEA 12.0.4)
+
+// go to File | Project Structure | Libraries
+// add following jars to scala-library classes section:
+// add akka-actor jar
+// add akka config jar
+
+// then edit run configuration
+// make Main class akka.Main
+// make program Argument the top class / entry point of this file
+// working directory should be full path to this project
