@@ -19,10 +19,10 @@ class Starter extends Actor {
   def receive = {
     case Starter.Start =>
       println("Akka Tracker started...")
+
       val monitor = context.actorOf(Props[Monitor])
       monitor ! Monitor.Start
 
-      //Thread.sleep(1000)
       val commandReader = context.actorOf(Props[CommandReader])
       commandReader ! CommandReader.Start
 
@@ -159,27 +159,21 @@ class WavFileWriter extends Actor {
 
     case WavFileWriter.SineTone =>
       val out = new FileOutputStream("mysine.wav")
-      val in = new FileInputStream("wavheader.wav")
-      var header = new Array[Byte](WavFileWriter.wavHeaderLength)
-
-      in.read(header)
-      in.close()
+      val headerObj = new WaveHeader
+      var header = headerObj.header.toArray
 
       val sampleValues = makeSineTone(1000, 0.9, 2)
       val newSamples = convertSamples(sampleValues)
 
-      header = updateHeader(header, newSamples.length)
+      header = headerObj.updateHeader(header, sampleValues.length)
       out.write(header)
       out.write(newSamples)
       out.close()
 
     case WavFileWriter.fsSquareWave =>
       val out = new FileOutputStream("mysquare.wav")
-      val in = new FileInputStream("wavheader.wav")
-      var header = new Array[Byte](WavFileWriter.wavHeaderLength)
-
-      in.read(header)
-      in.close()
+      val headerObj = new WaveHeader
+      var header = headerObj.header.toArray
 
       val firstSamples = makeSineTone(500, 0.6, 1)
       val secondSamples = makeSineTone(1500, 0.2, 1)
@@ -193,7 +187,7 @@ class WavFileWriter extends Actor {
 
       val finalSamples = convertSamples(firstSamples)
 
-      header = updateHeader(header, finalSamples.length)
+      header = headerObj.updateHeader(header, finalSamples.length)
       out.write(header)
       out.write(finalSamples)
       out.close()
@@ -227,8 +221,8 @@ class WavFileWriter extends Actor {
 
     for (i <- 0 until sampleValues.length) {
       val newSample = new Array[Byte](2)
-      newSample(0) = (sampleValues(i).toInt & 0xff).toByte
-      newSample(1) = ((sampleValues(i).toInt >> 8) & 0xff).toByte
+      newSample(0) = (sampleValues(i) & 0xff).toByte
+      newSample(1) = ((sampleValues(i) >> 8) & 0xff).toByte
       newSamples += newSample(0)
       newSamples += newSample(1)
     }
@@ -244,15 +238,6 @@ class WavFileWriter extends Actor {
         newSamples += samples(j)
     }
     newSamples.toArray
-  }
-
-  def updateHeader(header: Array[Byte], numSamples:Int): Array[Byte] = {
-
-    header(40) = (numSamples & 0x000000ff).toByte
-    header(41) = ((numSamples & 0x0000ff00) >> 8).toByte
-    header(42) = ((numSamples & 0x00ff0000) >> 16).toByte
-    header(43) = ((numSamples & 0xff000000) >> 24).toByte
-    header
   }
 }
 
@@ -298,7 +283,51 @@ class AkkaTracker2 extends Actor {
 }
 
 
+// adapted from ccrma.stanford.edu/courses/422/projects/WaveFormat/
+// & tmyymmt.net/    (hex2bytes)
+class WaveHeader {
 
+  var header = new ArrayBuffer[Byte](44)
+
+  val chunkID = "52494646" //"RIFF"
+  var chunkSize = "00000000"  // 36 + SubChunk2Size
+  val format = "57415645"   //"WAVE"
+  val subChunk1ID = "666d7420"   //"fmt"
+  val subChunk1Size = "10000000" // 16 for PCM
+  val audioFormat = "0100" // 1 indicates PCM
+  var numChannels = "0100" // 1 = mono, 2 = stereo
+  var sampleRate = "44AC0000" // 44100 Hz default
+  var byteRate = "88580100" // sampleRate * numChannels * bitsPerSample/8
+  var blockAlign = "0200"  // numChannels * bitsPerSample/8
+  var bitsPerSample = "1000" // 8 bits = 8, 16 bits = 16, etc.
+  val subChunk2ID = "64617461"   //"data"
+  var subChunk2Size = "00000000" //  numSamples * numChannels * bitsPerSample/8 --- number of bytes in the data.
+
+  val headerHexString = chunkID + chunkSize + format + subChunk1ID + subChunk1Size + audioFormat + numChannels +
+      sampleRate + byteRate + blockAlign + bitsPerSample + subChunk2ID + subChunk2Size
+
+  header ++= hex2bytes(headerHexString)
+
+  def hex2bytes(hex: String): Array[Byte] = {
+    hex.sliding(2,2).toArray.map(Integer.parseInt(_, 16).toByte)
+  }
+
+  def updateHeader(header: Array[Byte], numSamples:Int): Array[Byte] = {
+    // update chunkSize field
+    val chunkSize = numSamples + 36
+    header(4) = (chunkSize & 0x000000ff).toByte
+    header(5) = ((chunkSize & 0x0000ff00) >> 8).toByte
+    header(6) = ((chunkSize & 0x00ff0000) >> 16).toByte
+    header(7) = ((chunkSize & 0xff000000) >> 24).toByte
+
+    // update subChunk2Size
+    header(40) = (numSamples & 0x000000ff).toByte
+    header(41) = ((numSamples & 0x0000ff00) >> 8).toByte
+    header(42) = ((numSamples & 0x00ff0000) >> 16).toByte
+    header(43) = ((numSamples & 0xff000000) >> 24).toByte
+    header
+  }
+}
 
 
 
