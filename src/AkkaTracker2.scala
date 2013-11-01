@@ -20,9 +20,6 @@ class Starter extends Actor {
     case Starter.Start =>
       println("Akka Tracker started...")
 
-      val monitor = context.actorOf(Props[Monitor])
-      monitor ! Monitor.Start
-
       val commandReader = context.actorOf(Props[CommandReader])
       commandReader ! CommandReader.Start
 
@@ -142,12 +139,11 @@ class WavFileReader extends Actor {
       val sampleChange = sampleDeltas.sum / sampleDeltas.length
       printf("%s%d\n", "The average sample change is: ", sampleChange)
 
-   }
+  }
 }
 
 
 object WavFileWriter {
-  case object Tweak
   case object SineTone
   case object fsSquareWave
   val wavHeaderLength = 44
@@ -159,10 +155,10 @@ class WavFileWriter extends Actor {
 
     case WavFileWriter.SineTone =>
       val out = new FileOutputStream("mysine.wav")
-      val headerObj = new WaveHeader
+      val headerObj = WaveHeader(WaveHeader.mono)
       var header = headerObj.header.toArray
 
-      val sampleValues = makeSineTone(1000, 0.9, 2)
+      val sampleValues = makeSineTone(1000, 0.9, 1, 1)
       val newSamples = convertSamples(sampleValues)
 
       header = headerObj.updateHeader(header, sampleValues.length)
@@ -172,14 +168,14 @@ class WavFileWriter extends Actor {
 
     case WavFileWriter.fsSquareWave =>
       val out = new FileOutputStream("mysquare.wav")
-      val headerObj = new WaveHeader
+      val headerObj = WaveHeader(WaveHeader.stereo)
       var header = headerObj.header.toArray
 
-      val firstSamples = makeSineTone(500, 0.6, 1)
-      val secondSamples = makeSineTone(1500, 0.2, 1)
-      val thirdSamples = makeSineTone(2500, 0.12, 1)
-      val fourthSamples = makeSineTone(3500, 0.088, 1)
-      val fifthSamples = makeSineTone(4500, 0.055, 1)
+      val firstSamples = makeSineTone(500, 0.6, 1, 2)
+      val secondSamples = makeSineTone(1500, 0.2, 1, 2)
+      val thirdSamples = makeSineTone(2500, 0.12, 1, 2)
+      val fourthSamples = makeSineTone(3500, 0.088, 1, 2)
+      val fifthSamples = makeSineTone(4500, 0.055, 1, 2)
 
       for (i <- 0 until firstSamples.length) {
         firstSamples(i) = firstSamples(i) + secondSamples(i) + thirdSamples(i) + fourthSamples(i) + fifthSamples(i)
@@ -187,21 +183,22 @@ class WavFileWriter extends Actor {
 
       val finalSamples = convertSamples(firstSamples)
 
-      header = headerObj.updateHeader(header, finalSamples.length)
+      header = headerObj.updateHeader(header, firstSamples.length)
       out.write(header)
       out.write(finalSamples)
       out.close()
   }
 
-  def makeSineTone(frequency: Double, amplitude: Double, duration: Double): ArrayBuffer[Int] = {
+  def makeSineTone(frequency: Double, amplitude: Double, duration: Double, numChannels: Int): ArrayBuffer[Int] = {
 
     var sampleValues = ArrayBuffer[Int]()
+    val bytesPerSample = 2
 
-    // a 1000 Hz sine tone at 44100 samples per second has 4410 samples in one tenth of a second
+    // a 1000 Hz mono sine tone at 44100 samples per second has 4410 samples in one tenth of a second
     // and 100 cycles of the sine wave, or 44.1 samples per cycle
-    val degreesPerSample = (360 / 44.1) * (frequency / 1000)
+    val degreesPerSample = ((360 / 44.1) * (frequency / 1000)) / numChannels
     var degrees = 0: Double
-    val numSamples = duration * 44100
+    val numSamples = duration * numChannels * 44100 * bytesPerSample
     val ampLevel = 32768 * amplitude
     var s:Double = 0
 
@@ -241,32 +238,6 @@ class WavFileWriter extends Actor {
   }
 }
 
-object Monitor {
-  case object Start
-}
-
-class Monitor extends Actor {
-
-  def receive = {
-    case Monitor.Start =>
-     // println("Fired up the Monitor Actor")
-      // start the listener Actor
-      val listener = context.actorOf(Props[Listener])
-      listener ! Listener.Start
-  }
-}
-
-object Listener {
-  case object Start
-}
-
-class Listener extends Actor {
-
-  def receive = {
-    case Listener.Start =>
-      //println("Fired up the Listener Actor")
-  }
-}
 
 class AkkaTracker2 extends Actor {
 
@@ -282,20 +253,28 @@ class AkkaTracker2 extends Actor {
   }
 }
 
+object WaveHeader {
+  val mono = "0100"
+  val stereo = "0200"
+
+  def apply(numChannels: String) = {
+    new WaveHeader(numChannels)
+  }
+}
 
 // adapted from ccrma.stanford.edu/courses/422/projects/WaveFormat/
 // & tmyymmt.net/    (hex2bytes)
-class WaveHeader {
+class WaveHeader(val numChannels:String) {
 
   var header = new ArrayBuffer[Byte](44)
 
   val chunkID = "52494646" //"RIFF"
-  var chunkSize = "00000000"  // 36 + SubChunk2Size
+  var chunkSize = "00000000"  // 36 + subChunk2Size
   val format = "57415645"   //"WAVE"
   val subChunk1ID = "666d7420"   //"fmt"
   val subChunk1Size = "10000000" // 16 for PCM
   val audioFormat = "0100" // 1 indicates PCM
-  var numChannels = "0100" // 1 = mono, 2 = stereo
+  // var numChannels = "0100" // 1 = mono, 2 = stereo
   var sampleRate = "44AC0000" // 44100 Hz default
   var byteRate = "88580100" // sampleRate * numChannels * bitsPerSample/8
   var blockAlign = "0200"  // numChannels * bitsPerSample/8
@@ -303,8 +282,13 @@ class WaveHeader {
   val subChunk2ID = "64617461"   //"data"
   var subChunk2Size = "00000000" //  numSamples * numChannels * bitsPerSample/8 --- number of bytes in the data.
 
+  if (numChannels.matches(WaveHeader.stereo)) {
+    byteRate = "10B10200"
+    blockAlign = "0400"
+  }
+
   val headerHexString = chunkID + chunkSize + format + subChunk1ID + subChunk1Size + audioFormat + numChannels +
-      sampleRate + byteRate + blockAlign + bitsPerSample + subChunk2ID + subChunk2Size
+    sampleRate + byteRate + blockAlign + bitsPerSample + subChunk2ID + subChunk2Size
 
   header ++= hex2bytes(headerHexString)
 
@@ -328,6 +312,3 @@ class WaveHeader {
     header
   }
 }
-
-
-
