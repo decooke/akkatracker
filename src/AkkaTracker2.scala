@@ -55,14 +55,14 @@ class CommandReader extends Actor {
         }
 
         case "s" | "sine" => {
-          val wavFileWriter = context.actorOf(Props[WavFileWriter])
-          wavFileWriter ! WavFileWriter.SineTone
+          val waveForm = context.actorOf(Props(new MakeWaveForm()))
+          waveForm ! MakeWaveForm.SineWave
           self ! CommandReader.Start
         }
 
         case "sq" | "square" => {
-          val wavFileWriter = context.actorOf(Props[WavFileWriter])
-          wavFileWriter ! WavFileWriter.fsSquareWave
+          val waveForm = context.actorOf(Props(new MakeWaveForm()))
+          waveForm ! MakeWaveForm.SquareWave(500, .6, 2, 2, 100)
           self ! CommandReader.Start
         }
 
@@ -143,17 +143,17 @@ class WavFileReader extends Actor {
 }
 
 
-object WavFileWriter {
-  case object SineTone
-  case object fsSquareWave
+object MakeWaveForm {
+  case object SineWave
+  case class SquareWave(frequency: Double, amplitude: Double, duration: Double, numChannels: Int, numTerms: Int)
   val wavHeaderLength = 44
 }
 
-class WavFileWriter extends Actor {
+class MakeWaveForm() extends Actor {
 
   def receive = {
 
-    case WavFileWriter.SineTone =>
+    case MakeWaveForm.SineWave =>
       val out = new FileOutputStream("mysine.wav")
       val headerObj = WaveHeader(WaveHeader.mono)
       var header = headerObj.header.toArray
@@ -166,24 +166,28 @@ class WavFileWriter extends Actor {
       out.write(newSamples)
       out.close()
 
-    case WavFileWriter.fsSquareWave =>
+    case MakeWaveForm.SquareWave(frequency, amplitude, duration, numChannels, numTerms) =>
       val out = new FileOutputStream("mysquare.wav")
       val headerObj = WaveHeader(WaveHeader.stereo)
       var header = headerObj.header.toArray
+      var summedValues = ArrayBuffer[Int]()
 
-      val firstSamples = makeSineTone(500, 0.6, 1, 2)
-      val secondSamples = makeSineTone(1500, 0.2, 1, 2)
-      val thirdSamples = makeSineTone(2500, 0.12, 1, 2)
-      val fourthSamples = makeSineTone(3500, 0.088, 1, 2)
-      val fifthSamples = makeSineTone(4500, 0.055, 1, 2)
+      var frequency_mult = 1
+      for (j <- 1 to numTerms) {
+        val sineValues = makeSineTone(frequency * frequency_mult, amplitude / frequency_mult, duration, numChannels)
 
-      for (i <- 0 until firstSamples.length) {
-        firstSamples(i) = firstSamples(i) + secondSamples(i) + thirdSamples(i) + fourthSamples(i) + fifthSamples(i)
+        for (k <- 0 until sineValues.length) {
+          if (j == 1)
+            summedValues += sineValues(k)
+          else
+            summedValues(k) += sineValues(k)
+        }
+        frequency_mult += 2
       }
 
-      val finalSamples = convertSamples(firstSamples)
+      val finalSamples = convertSamples(summedValues) // back to .wav
 
-      header = headerObj.updateHeader(header, firstSamples.length)
+      header = headerObj.updateHeader(header, finalSamples.length / numChannels)
       out.write(header)
       out.write(finalSamples)
       out.close()
@@ -200,14 +204,14 @@ class WavFileWriter extends Actor {
     var degrees = 0: Double
     val numSamples = duration * numChannels * 44100 * bytesPerSample
     val ampLevel = 32768 * amplitude
-    var s:Double = 0
+    var s: Double = 0
 
     while (s < numSamples) {
       sampleValues += (Math.sin(degrees.toRadians) * ampLevel).toInt
       degrees += degreesPerSample
       if (degrees >= 360)
         degrees -= 360
-      s+=1
+      s += 1
     }
 
     sampleValues
@@ -227,7 +231,6 @@ class WavFileWriter extends Actor {
   }
 
   def loopSamples(samples: Array[Byte], numLoops: Int): Array[Byte] = {
-
     var newSamples = ArrayBuffer[Byte]()
 
     for (i <- 0 until numLoops) {
