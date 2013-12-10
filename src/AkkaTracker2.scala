@@ -62,7 +62,19 @@ class CommandReader extends Actor {
 
         case "sq" | "square" => {
           val waveForm = context.actorOf(Props(new MakeWaveForm()))
-          waveForm ! MakeWaveForm.SquareWave(500, .6, 2, 2, 100)
+          waveForm ! MakeWaveForm.SquareWave(500, .6, 2, 2, 112)
+          self ! CommandReader.Start
+        }
+
+        case "t" | "triangle" => {
+          val waveForm = context.actorOf(Props(new MakeWaveForm()))
+          waveForm ! MakeWaveForm.TriangleWave(500, .9, 2, 1)
+          self ! CommandReader.Start
+        }
+
+        case "ta" | "tri_add" => {
+          val waveForm = context.actorOf(Props(new MakeWaveForm()))
+          waveForm ! MakeWaveForm.TriangleWaveAdditive(500, .5, 2, 1, 50)
           self ! CommandReader.Start
         }
 
@@ -146,6 +158,8 @@ class WavFileReader extends Actor {
 object MakeWaveForm {
   case object SineWave
   case class SquareWave(frequency: Double, amplitude: Double, duration: Double, numChannels: Int, numTerms: Int)
+  case class TriangleWaveAdditive(frequency: Double, amplitude: Double, duration: Double, numChannels: Int, numTerms: Int)
+  case class TriangleWave(frequency: Double, amplitude: Double, duration: Double, numChannels: Int)
   val wavHeaderLength = 44
 }
 
@@ -191,6 +205,51 @@ class MakeWaveForm() extends Actor {
       out.write(header)
       out.write(finalSamples)
       out.close()
+
+    case MakeWaveForm.TriangleWaveAdditive(frequency, amplitude, duration, numChannels, numTerms) =>
+      val out = new FileOutputStream("mytriangleadd.wav")
+      val headerObj = WaveHeader(WaveHeader.stereo)
+      var header = headerObj.header.toArray
+      var summedValues = ArrayBuffer[Int]()
+
+      var frequency_mult = 1
+      for (j <- 1 to numTerms) {
+        val sineValues = makeSineTone(frequency * frequency_mult, amplitude / (frequency_mult * frequency_mult), duration, numChannels)
+
+        for (k <- 0 until sineValues.length) {
+          if (j == 1)
+            summedValues += sineValues(k)
+          else
+            summedValues(k) += sineValues(k)
+        }
+        frequency_mult += 2
+      }
+
+      val finalSamples = convertSamples(summedValues) // back to .wav
+
+      header = headerObj.updateHeader(header, finalSamples.length / numChannels)
+      out.write(header)
+      out.write(finalSamples)
+      out.close()
+
+    case MakeWaveForm.TriangleWave(frequency, amplitude, duration, numChannels) =>
+      val out = new FileOutputStream("mytriangle.wav")
+      val headerObj = WaveHeader(WaveHeader.mono)
+      var header = headerObj.header.toArray
+      var summedValues = ArrayBuffer[Int]()
+
+      val toneValues = makeTriangleTone(frequency, amplitude, duration, numChannels)
+
+      for (k <- 0 until toneValues.length) {
+        summedValues += toneValues(k)
+      }
+
+      val finalSamples = convertSamples(summedValues) // back to .wav
+
+      header = headerObj.updateHeader(header, finalSamples.length / numChannels)
+      out.write(header)
+      out.write(finalSamples)
+      out.close()
   }
 
   def makeSineTone(frequency: Double, amplitude: Double, duration: Double, numChannels: Int): ArrayBuffer[Int] = {
@@ -216,6 +275,28 @@ class MakeWaveForm() extends Actor {
 
     sampleValues
   }
+
+  def makeTriangleTone(frequency: Double, amplitude: Double, duration: Double, numChannels: Int): ArrayBuffer[Int] = {
+
+    var sampleValues = ArrayBuffer[Int]()
+    val bytesPerSample = 2
+    val degreesPerSample = ((360 / 44.1) * (frequency / 1000)) / numChannels
+    var degrees = 0: Double
+    val numSamples = duration * numChannels * 44100 * bytesPerSample
+    val ampLevel = 32768 * amplitude
+    var s: Double = 0
+
+    while (s < numSamples) {
+      sampleValues += (Math.abs(1 - (degrees / 360)) * ampLevel).toInt - (32768 / 2)
+      degrees += degreesPerSample
+      if (degrees >= 720)
+        degrees -= 720
+      s += 1
+    }
+
+    sampleValues
+  }
+
 
   def convertSamples(sampleValues: ArrayBuffer[Int]): Array[Byte] = {
     val newSamples = ArrayBuffer[Byte]()
